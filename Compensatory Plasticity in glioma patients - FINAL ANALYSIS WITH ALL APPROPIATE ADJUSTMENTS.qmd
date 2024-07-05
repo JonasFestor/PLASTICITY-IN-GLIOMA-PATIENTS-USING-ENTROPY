@@ -1,0 +1,769 @@
+---
+title: "M=?, R=.?? [Adjusted analyses]"
+subtitle: "Compensatory Plasticity in glioma patients (sample entropy, rs-fMRI)"
+author: "Jonas Festor"
+format:
+  html:
+    embed-resources: true
+    toc: true
+editor: visual
+---
+
+## Statistical Analysis for Hypothesis 1 through 3 (Version 3)
+
+Overview of the hypothesis:\
+H1: Entropy patterns of healthy controls differ from HGG / LGG patients (intratumoral tissue, peritumoral tissue, distant ipsilateral regions and contralateral hemisphere)
+
+H2: Significant differences in entropy scores between LGG and HGG patients are observable (intratumoral tissue, peritumoral tissue, distant ipsilateral regions and contralateral hemisphere);
+
+H3: HGG compared to LGG will show a consistent pattern of either higher or lower entropy across different regions of interest.
+
+## Structure of this Document
+
+This document starts off with clarifying some prerequisites of data-preparation followed by statistical analysis.
+
+The first few R-blocks of the analysis are about evaluating hypothesis 1, followed by the analysis of hypotheses 2 and 3. Post-hoc tests (e.g., dependent sample t-test) will be included, while Bonferonni correction is used when needed. Main effects are also specified.
+
+Regarding the assumptions:\
+The assumptions are checked before performing the respective tests (mainly mixed ANOVA). Arguments for/against the robustness will be appended. One of the most relevant assumptions is the sphericity assumption, which is not explicitly performed within the code but adjustments take place by executing the mixed ANOVA.\
+See excerpt: "*The assumption of sphericity will be automatically checked during the computation of the ANOVA test using the R function 'anova_test() \[rstatix package\]. The Mauchly's test is internally used to assess the sphericity assumption. By using the function get_anova_table() \[rstatix\] to extract the ANOVA table, the Greenhouse-Geisser sphericity correction is automatically applied*" (<https://www.datanovia.com/en/lessons/mixed-anova-in-r/#assumptions)>.\
+In this case, the correction is applied to every factor irrespective of the result of the GG test.
+
+In greater detail, the analyses follow this structure\
+1. Hypothesis 1: Assumptions (& outlier correction)\
+2. Testing Hypothesis 1\
+3. Visualizing Hypothesis 1\
+4. Hypothesis 2-3: Assumptions\
+5. Testing Hypothesis 2-3\
+6. Visualize Hypothesis 2-3\
+7. Visualizations across Hypotheses
+
+PLEASE NOTE: This analyses are the latest ones including regressing out regional ROIs volume and base-line adjustments. These leads to limitations in the interpretability by some visualizations. Therefore, due to few difference with the adjustment visualizations should rather be performed without subsequent adjustment (e.g., residual plots stay interpretable)
+
+## Prerequisites for the Analysis
+
+Set the working directory, install and/or load necessary packages, and prepare and read the data-files.\
+In greater detail, if you haven't already installed the packages you have to use the command *install.packages("name")* at the very beginning (for each of them separately). Please edit the setwd path to fit your working directory.
+
+To execute different analyses with different parameters you will need to\
+1. Press "CTR+F"\
+2. Type in **Find** "?\_??"\
+3. Type in **Replace** the suited parameters like "m_r" (e.g., 3_7 without any dot before r parameter)\
+4. Click on **All** to replace all\
+5. The question marks (search m=?, r=.??) should also be filled in separately so that the visualizations state which analysis was conducted.\
+
+```{r, echo=TRUE, results='hide', warning=FALSE, message=FALSE}
+
+setwd("./")  
+
+# Please note: 
+# Parameters used are mentioned in the title of the file and variables 
+# For each parameter I decided to create two files for convenience in the analysis # "All" includes HC and Glioma data (important for H1), while "glioma" includes HGG and LGG only (relevant for H2,H3)   
+
+
+# I. Open Data 
+library(openxlsx)  
+
+data_all_?_?? = read.xlsx("?_??_Jonas_Wouter_version_final - across participants.xlsx")  
+data_glioma_?_?? = read.xlsx("?_??_Jonas_Wouter_version_final - across participants - selection - H2H3.xlsx")    
+
+
+# II. Load necessary packages for the analysis 
+library(tidyverse) # Version 2.0.0
+library(ggpubr)    # Version 0.6.0
+library(rstatix)   # Version 0.7.2
+library(ggplot2)   # Version 3.5.0
+library(reshape2)  # Version 1.4.4
+library(corrplot)  # Version 0.92 (just used in preliminary analysis)
+library(dplyr)     # Version 1.1.4
+library(broom)     # Version 1.0.5
+library(ggResidpanel) # Version 0.3.0
+library(asbio)     # Version 1.9.7
+```
+
+### Gather (baseline corrected) Data and Regress Out Volume
+
+```{r}
+# III. Gather Data
+# 4 regions are in different columns, which is a problem for the analysis.  
+# Via long-format create one variable out of all entropy measures.
+# Also the ROIs volumes need to be added to within one column. 
+
+# III.I For hypothesis 1 
+data_across_regions_?_??_1 = gather(data_all_?_??, key = "en_variable", value = "score", starts_with("en_tumor_?_??"), starts_with("en_peri_?_??"), starts_with("en_ipsi_?_??"), starts_with("en_contra_?_??")) 
+
+data_across_regions_?_??_2 = gather(data_all_?_??, key = "volume", value = "volume_score", starts_with("tumor_volume_mm3"), starts_with("peri_volume_mm3"), starts_with("ipsi_volume_mm3"), starts_with("contra_volume_mm3")) 
+
+data_across_regions_?_?? = cbind(data_across_regions_?_??_1, volume = data_across_regions_?_??_2$volume, volume_score= data_across_regions_?_??_2$volume_score)
+
+# III.II For hypothesis 2-3 (here use baseline-adjusted values)
+data_across_regions_H2_H3_?_??_1 = gather(data_glioma_?_??, key = "en_variable", value = "score", starts_with("baselinecorrected_tumor"), starts_with("baselinecorrected_peritumor"), starts_with("baselinecorrected_ipsilateral"), starts_with("baselinecorrected_contralateral"))  
+
+data_across_regions_H2_H3_?_??_2 = gather(data_glioma_?_??, key = "volume", value = "volume_score", starts_with("tumor_volume_mm3"), starts_with("peri_volume_mm3"), starts_with("ipsi_volume_mm3"), starts_with("contra_volume_mm3")) 
+
+data_across_regions_H2_H3_?_?? = cbind(data_across_regions_H2_H3_?_??_1, volume = data_across_regions_H2_H3_?_??_2$volume, volume_score = data_across_regions_H2_H3_?_??_2$volume_score)
+
+# Just for comparing pre and post-correlation in next block
+PreH1 = cor(data_across_regions_?_??$score, data_across_regions_?_??$volume_score)
+PreH23 = cor(data_across_regions_H2_H3_?_??$score, data_across_regions_H2_H3_?_??$volume_score)
+
+
+
+# Pre-screen relationship between ROI's volume and entropy values
+# Create the scatterplot with regression lines
+ggplot(data_across_regions_?_??, aes(x = volume_score, y = score)) +
+  geom_point() +  
+  geom_smooth(method = "lm", se = FALSE) +
+  ggtitle("Regressing ROIs volume across HC, HGG, LGG") +
+  xlab("ROIs Volume Scores") +
+  ylab("Sample Entropy") +
+  labs(subtitle = " m=?, r=.??")
+
+ggplot(data_across_regions_H2_H3_?_??, aes(x = volume_score, y = score)) +
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE) +
+  ggtitle("Regressing ROIs volume across HGG & LGG") +
+  xlab("ROIs Volume Scores") +
+  ylab("Sample Entropy") +
+  labs(subtitle = " m=?, r=.??")
+
+
+
+
+
+# IV Regress out (r_o) ROIs volumes (across regions) for H1-H3 from entropy
+# In this case unstandardized residuals once are extracted
+# Keep in mind that the original variables will be overwritten
+
+# IV.I H1 (+overall visualizations)
+r_o_volumes = lm(score ~ volume_score, data = data_across_regions_?_??)
+data_across_regions_?_??$score = residuals(r_o_volumes)
+
+# IV.II H2-H3 
+r_o_volumes_g = lm(score ~ volume_score, data = data_across_regions_H2_H3_?_??)
+data_across_regions_H2_H3_?_??$score = residuals(r_o_volumes_g)
+
+# Just for comparing pre and post-correlation in next block
+PostH1 = cor(data_across_regions_?_??$score, data_across_regions_?_??$volume_score)
+PostH23 = cor(data_across_regions_H2_H3_?_??$score, data_across_regions_H2_H3_?_??$volume_score)
+```
+
+### Double Check Quality of regression
+
+```{r}
+# JUST FOR MORE INFORMATION ABOUT DENOISING
+
+# If you want to gather more information of regressing out the volume:
+summary(lm(score ~ volume_score, data = data_across_regions_?_??))
+summary(lm(score ~ volume_score, data = data_across_regions_H2_H3_?_??))
+
+#View(residuals(r_o_volumes))
+#View(residuals(r_o_volumes_g))
+
+
+# Relationship between ROI's volume and entropy values after correction
+# Create the scatterplot with regression lines
+ggplot(data_across_regions_?_??, aes(x = volume_score, y = score)) +
+  geom_point() +  
+  geom_smooth(method = "lm", se = FALSE) +
+  ggtitle("After regressing ROIs volume across HC, HGG, LGG") +
+  xlab("ROIs Volume Scores") +
+  ylab("Residuals") +
+  labs(subtitle = " m=?, r=.??")
+
+ggplot(data_across_regions_H2_H3_?_??, aes(x = volume_score, y = score)) +
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE) +
+  ggtitle("After regressing ROIs volume across HGG & LGG") +
+  xlab("ROIs Volume Scores") +
+  ylab("Residuals") +
+  labs(subtitle = " m=?, r=.??")
+
+
+# Correlational Matrix quantifying reduction of ROIs volume influence upon entropy
+correlation_data <- data.frame(
+  Hypotheses = c("H1", "H2/H3"),
+  Original = c(PreH1, PreH23),
+  Residuals = c(PostH1, PostH23)
+)
+
+correlation_data
+
+
+# Create bar plot for each region
+for (i in 1:nrow(correlation_data)) {
+  bar_data <- correlation_data[i, ]
+  bar_names <- bar_data$Region
+  bar_values <- as.numeric(bar_data[-1])
+  
+  # Determine ylim for each plot
+  ylim <- range(bar_values)
+  
+  # Create new plot for each region with specific y-axis scale
+  barplot(bar_values, names.arg = bar_names, beside = TRUE, col = c("cornflowerblue", "lightcoral"),
+          main = paste(bar_names), ylab = "Correlation",
+          legend.text = c("Original", "Residuals"), args.legend = list(x = "topright", bty = "n"), ylim = ylim)
+
+# Add a subtitle
+mtext(" m=?, r=.??", side = 1, line = 1, cex = 0.8)  
+}
+
+
+```
+
+## Hypothesis 1: Assumptions and Outlier correction
+
+```{r}
+# Identify Outliers
+outliers_H1 <- data_across_regions_?_?? %>%
+  group_by(en_variable, Glioma_HC) %>%
+  identify_outliers(score)
+
+outliers_H1 %>% # Report as.outlier 
+  select(en_variable, Glioma_HC, score) %>%
+  print(n = Inf)  
+
+outliers_H1_extreme = filter(outliers_H1, is.extreme == TRUE) 
+
+outliers_H1_extreme %>% # Report as.extreme_outliers
+  print(n = Inf)  
+
+
+# Row counts are included to see if exclusion worked correctly
+# Old row - new row = extreme_outlier*4 (whole participant excluded)
+row_count <- nrow(data_across_regions_?_??)
+row_count
+
+
+# Pull ID numbers to exclude
+# Exclusion by ID numbers to sustain paired sample t-tests later on
+# In other words extreme outlier are excluded and would lead to missing data
+# Missing data will unequalize the groups making paired (dependent) post hoc tests impossible
+# Instead exclude participant as a whole (all 4 observations from data set)
+# This is justifiable with the very small proportion of actual exclusions
+data_across_regions_?_??_corrected <- data_across_regions_?_?? %>%
+  anti_join(outliers_H1_extreme, by = "Id")
+
+
+# you can either use the filtered (extreme) or general outlier version; in this case extreme if you want to use the code yourself
+
+#IMPORTANT: If you want to reproduce with SPSS you need to make this part unusable by putting appropriate hashtags!
+#    'data_across_regions_?_??_corrected <- data_across_regions_?_?? # %>%' 
+#    '#anti_join(.....)'
+
+# 'anti_join' removes rows from the dataset that have a match in this case with Id.
+# Now 'cleaned_data' = data_across_regions_?_??_corrected contains all the data except for the identified outliers subjects (across the 4 ROIs)
+
+row_count <- nrow(data_across_regions_?_??_corrected)
+row_count
+```
+
+```{r}
+# Testing Assumptions
+
+
+# Normality assumptions 
+# Normality per condition
+data_across_regions_?_??_corrected %>%
+  group_by(en_variable, Glioma_HC) %>%
+  shapiro_test(score) 
+
+# Normality of residuals
+# Note: A different model function is used as in the Anova later one because the Anova function from rstatix does not support extracting residuals
+# No great differences are expected and justifies usage
+model_?_??_corrected = lm(score ~ en_variable + Glioma_HC, data = data_across_regions_?_??_corrected)
+# if including or excluding en_variable doesn’t change anything substantially
+
+shapiro_test(model_?_??_corrected$residuals)
+
+
+# Homogeneity of variance
+# Coercion because of categorical data. So warnings should be fine.
+# Or in other word "character" got to "factor"
+data_across_regions_?_??_corrected %>%
+  group_by(en_variable) %>%
+  levene_test(score ~ Glioma_HC)
+
+
+# Homogeneity of Covariance
+box_m(data_across_regions_?_??_corrected[, "score", drop = FALSE], data_across_regions_?_??_corrected$Glioma_HC)
+
+
+# Test No person-by-treatment interaction
+tukey.add.test(data_across_regions_?_??_corrected$score, data_across_regions_?_??_corrected$en_variable, data_across_regions_?_??_corrected$Glioma_HC)
+
+#-------------------#
+# Plots and Histograms
+
+# Normality of residual
+resid_auxpanel(model_?_??_corrected$residuals, 
+               model_?_??_corrected$fitted.values,
+               plots = c("qq", "hist", "index", "resid"),
+               smoother = TRUE, qqbands = TRUE, bins=50)
+
+# Normality per conditions
+par(mfrow=c(2, 2))  # 2x2 layout for the plots
+# Create filters to selected from outlier corrected data set
+Filter_g_t_?_?? = filter(data_across_regions_?_??_corrected, Glioma_HC == "Glioma", en_variable == "en_tumor_?_??")
+hist(Filter_g_t_?_??$score, main="Glioma Patients - Tumor", xlab = "Residual_SampEn", col="orange")
+Filter_g_p_?_?? = filter(data_across_regions_?_??_corrected, Glioma_HC == "Glioma", en_variable == "en_peri_?_??")
+hist(Filter_g_p_?_??$score, main="Glioma Patients - Peritumoral", xlab = "Residual_SampEn", col="orange")
+Filter_g_i_?_?? = filter(data_across_regions_?_??_corrected, Glioma_HC == "Glioma", en_variable == "en_ipsi_?_??")
+hist(Filter_g_i_?_??$score, main="Glioma Patients - Ispsilateral", xlab = "Residual_SampEn", col="orange")
+Filter_g_c_?_?? = filter(data_across_regions_?_??_corrected, Glioma_HC == "Glioma", en_variable == "en_contra_?_??")
+hist(Filter_g_c_?_??$score, main="Glioma Patients - Contralateral", xlab = "Residual_SampEn", col="orange")
+
+Filter_h_t_?_?? = filter(data_across_regions_?_??_corrected, Glioma_HC == "HC", en_variable == "en_tumor_?_??")
+hist(Filter_h_t_?_??$score, main="Healthy Controls - Tumor", xlab = "Residual_SampEn", col="darkgreen")
+Filter_h_p_?_?? = filter(data_across_regions_?_??_corrected, Glioma_HC == "HC", en_variable == "en_peri_?_??")
+hist(Filter_h_p_?_??$score, main="Healthy Controls - Peritumoral", xlab = "Residual_SampEn", col="darkgreen")
+Filter_h_i_?_?? = filter(data_across_regions_?_??_corrected, Glioma_HC == "HC", en_variable == "en_ipsi_?_??")
+hist(Filter_h_i_?_??$score, main="Healthy Controls - Ispsilateral", xlab = "Residual_SampEn", col="darkgreen")
+Filter_g_c_?_?? = filter(data_across_regions_?_??_corrected, Glioma_HC == "HC", en_variable == "en_contra_?_??")
+hist(Filter_g_c_?_??$score, main="Healthy Controls - Contralateral", xlab = "Residual_SampEn", col="darkgreen")
+
+# Reset the plotting configuration
+par(mfrow=c(1, 1))  # Reset to default single plot
+
+
+#-------------------#
+# Robustness
+# extract e.g., n per group that is of interest for robustness
+data_across_regions_?_??_corrected %>%
+  group_by(en_variable, Glioma_HC) %>%
+  get_summary_stats(score, type = "mean_sd")
+```
+
+Interpretation and Argumentation:
+
+**Extreme Outliers** (n='see above') were identified and excluded in this analysis
+
+**Note about normality and variance assumptions:**\
+*To all of the assumptions mentioned above ANOVA's, just like t-tests, are "robust against the violations of the normality and equal variance assumptions if within-groups n's are reasonable large"* (Applied Statistics I, Warner, 2021, p.377; also see p.486).*\
+In greater detail about normality: "The results of these tests of normality often dependend more on sample size than on distribution shape (University College London). \[...\] Some textbooks say that a normal distribution of scores in a sample is a required assumption for the use of many common statistics. Strictly speaking that is incorrect (Field, 2018)."* (Applied Statistics I, Warner, 2021, p.148f.)*\
+*Especially the Shapiro test gets easily oversensitive with sample size exceeding n = 50 (Datanovia, ultimate guide for mixed design anova).\
+On a general note, making interpretations of the histograms and graphs is more important.
+
+In our case, it is easy to argue that there is **robustness**:\
+I argue that the test is robust against this violation because the difference in observations between the smallest and largest group does not exceed nk \> 1.5 and we have a *reasonably* large sample size. In our case, the groups have a sample size of n='mention n from robustness output' and ... respectively.
+
+Which assumptions are most **relevant**?\
+No person-by-treatment interaction (tested above) and sphericity assumption (internally adjusted in ANOVA irrespective of significance and therefore [not]{.underline} explicitly tested in this part).
+
+## Testing Hypothesis 1: HC & Glioma differences (averaged version)
+
+```{r}
+# Type III sum of squares is used, whereas main effects get hardly interpretable if an interaction effect is present (sig or non-sig). 
+# Why did I not just use Type II? Inconsistencies in calculations if results were compared to SPSS
+
+
+# Mixed ANOVA with Interaction term
+res.aov_H1_corrected = anova_test(
+  data = data_across_regions_?_??_corrected, dv = score, wid = Id,
+  between = Glioma_HC, within = en_variable, 
+  effect.size = "pes", type=3, detailed = TRUE
+)
+
+# Mixed ANOVA for Main effects
+# not always necessary or appropriate
+res.aov_H1_main_corrected = anova_test(score ~ Glioma_HC + en_variable, data = data_across_regions_?_??_corrected, wid = Id,
+  effect.size = "pes", type=3
+)
+
+# Extract ANOVA table
+# GG specifies that the correction for sphericity will be done via Greenhouse-Geisser correction to all variables irrespective of their p-value on the GG test
+anova_table_H1_corrected = get_anova_table(res.aov_H1_corrected, correction = "GG")
+anova_table_H1_corrected
+
+anova_table_H1_main_corrected = get_anova_table(res.aov_H1_main_corrected, correction = "GG")
+anova_table_H1_main_corrected
+
+#-------------------
+# This following part has most relevance if interaction terms or main effects are significant. If not, following test should not be reported or executed.
+# You can find post-hoc one way ANOVAs, effect size calculations and contrasts underneath
+
+# One way group / subjects variable | Effect of subject on each time point
+data_across_regions_?_??_corrected %>%
+  group_by(en_variable) %>%
+  anova_test(dv = score, wid = Id, between = Glioma_HC) %>%
+  get_anova_table() %>%
+  adjust_pvalue(method = "bonferroni")
+
+# The evaluation of Cohen’s D can be obtained with bootstrapping
+#data_across_regions_?_??_corrected %>%
+#  group_by(en_variable) %>%
+#  cohens_d(score ~ Glioma_HC, paired = TRUE, 
+#        var.equal = FALSE, ci = TRUE, conf.level = 0.95)
+
+
+# One way location variable | Effect of Location upon subject
+data_across_regions_?_??_corrected %>%
+  group_by(Glioma_HC) %>%
+  anova_test(dv = score, wid = Id, between = en_variable) %>%
+  get_anova_table() %>%
+  adjust_pvalue(method = "bonferroni")
+
+
+
+# Contrast: Might be unnecessary
+# Pairwise comparisons between group levels
+Paired_t_tests = data_across_regions_?_??_corrected %>%
+   group_by(Glioma_HC) %>%
+   t_test(score ~ en_variable, p.adjust.method = "bonferroni", detailed = TRUE, paired = TRUE) # Must be true if it is a dependent test
+print(Paired_t_tests, width = Inf)
+
+# The evaluation of the effect size is obtain with bootstrapping
+#data_across_regions_?_??_corrected %>%
+#  group_by(Glioma_HC) %>%
+#  cohens_d(score ~ en_variable, paired = TRUE, 
+#        var.equal = FALSE, ci = TRUE, conf.level = 0.95)
+  
+
+
+
+
+```
+
+Here you first should report the output of the interaction terms in the ANOVA.\
+Afterwards, main effect are being conducted and supplement by e.g., simple effects.
+
+## Visualize Hypothesis 1
+
+```{r}
+## Visualizations of the data (not the prediction of the model)
+
+# Create ggline for HC/Glioma difference
+ggline(data_across_regions_?_??_corrected, 
+                          x = "en_variable", 
+                          y = "score", 
+                          color = "Glioma_HC",
+                          add = "mean_ci", "dotplot") + #CI=95%
+  labs(x = "Regions",            
+       y = "Residual_SampEn",    
+       color = "Subjects") +     # Legend title
+  scale_x_discrete(labels = c("en_tumor_?_??" = "Tumor",        # Custom labels for each level
+                              "en_peri_?_??" = "Peri-tumor",
+                              "en_ipsi_?_??" = "Ipsilateral",
+                              "en_contra_?_??" = "Contralateral"))  +
+  labs(subtitle = "Entropy parameters:  m=?, r=.?? (Hypothesis 1)") +
+  theme(plot.subtitle = element_text(size = 7))+
+  scale_color_manual(values = c("darkgreen", "orange")) 
+
+
+# Create boxplot for HC/Glioma difference
+ggplot(data_across_regions_?_??_corrected, aes(x = en_variable, 
+                                            y = score, 
+                                            color = Glioma_HC)) +
+  geom_boxplot() +
+  labs(x = "en_variable", 
+       y = "Score", 
+       color = "Glioma_HC") +
+  theme_minimal() +
+  labs(x = "Regions",            
+       y = "Residual_SampEn",           
+       color = "Subjects") +     # Legend title
+  scale_x_discrete(labels = c("en_tumor_?_??" = "Tumor",        # Custom labels for each level
+                              "en_peri_?_??" = "Peri-tumor",
+                              "en_ipsi_?_??" = "Ipsilateral",
+                              "en_contra_?_??" = "Contralateral")) +
+  labs(subtitle = "Entropy parameters:  m=?, r=.?? (Hypothesis 1)") +
+  theme(plot.subtitle = element_text(size = 7)) +
+  scale_color_manual(values = c("darkgreen", "orange")) 
+```
+
+These plots (especially ggline) should be in line with the simple effects results. Double check the conclusions. The graphs created can be best compared across different parameter choices.
+
+## Hypotheses 2-3: Assumptions and Outlier correction
+
+```{r}
+# Identify Outliers
+outliers_H2_H3 <- data_across_regions_H2_H3_?_?? %>%
+  group_by(en_variable, Grading) %>%
+  identify_outliers(score)
+
+outliers_H2_H3 %>% # Report as.outlier 
+  select(en_variable, Grading, score) %>%
+  print(n = Inf)
+
+outliers_H2_H3_extreme = filter(outliers_H2_H3, is.extreme == TRUE) # Report is.extreme
+
+outliers_H2_H3_extreme %>% # Report as_extreme.outlier 
+  print(n = Inf)  
+
+# Row counts are included to see if exclusion worked correctly
+# Old row - new row = extreme_outlier*4 (whole participant excluded)
+row_count <- nrow(data_across_regions_H2_H3_?_??)
+row_count
+
+# Pull ID numbers to exclude
+# Exclusion by ID numbers to sustain paired sample t-tests later on
+# In other words extreme outlier are excluded and would lead to missing data
+# Missing data will unequalize the groups making paired (dependent) post hoc tests impossible
+# Instead exclude participant as a whole (all 4 observations from data set)
+# This is justifiable with the very small proportion of actual exclusions
+data_across_regions_H2_H3_?_??_corrected <- data_across_regions_H2_H3_?_?? %>%
+  anti_join(outliers_H2_H3_extreme, by = "Id")
+# you can either use the filtered (extreme) or general outlier version; in this case extreme.
+
+#IMPORTANT: If you want to reproduce with SPSS you need to make this part unusable by putting appropriate hashtags!
+#    'data_across_regions__H2_H3_?_??_corrected <- data_across_regions_?_?? # %>%' 
+#   '#anti_join(outliers_H2_H3, by = c("en_variable", "Glioma_HC", "score"))'
+
+
+# 'anti_join' removes rows from the dataset that have a match in this case with Id.
+# Now 'cleaned_data' = data_across_regions_?_??_corrected contains all the data except for the identified outliers subjects (across the 4 ROIs)
+row_count <- nrow(data_across_regions_H2_H3_?_??_corrected)
+row_count
+```
+
+```{r}
+# Testing assumptions
+
+# Normality assumptions 
+# Normality of variables
+data_across_regions_H2_H3_?_??_corrected %>%
+  group_by(en_variable, Grading) %>%
+  shapiro_test(score) 
+
+# Normality of residuals
+# Note: A different model function is used because the Anova function from rstatix does not support extracting residuals
+# No great differences are expected and justify usage
+model_H2_H3_?_??_corrected = lm(score ~ en_variable + Grading + sex + age_T0, data = data_across_regions_H2_H3_?_??_corrected)
+
+shapiro_test(model_H2_H3_?_??_corrected$residuals)
+
+# Homogeneity of variance
+# Coercion because of categorical data. So warnings should be fine.
+data_across_regions_H2_H3_?_??_corrected %>%
+  group_by(en_variable) %>%
+  levene_test(score ~ Grading)
+
+# Homogeneity of Covariance
+box_m(data_across_regions_H2_H3_?_??_corrected[, "score", drop = FALSE], data_across_regions_H2_H3_?_??_corrected$Grading)
+
+# Test No person-by-treatment interaction
+tukey.add.test(data_across_regions_H2_H3_?_??_corrected$score, data_across_regions_H2_H3_?_??_corrected$en_variable, data_across_regions_H2_H3_?_??_corrected$Grading)
+
+#-------------------#
+# Plots and Histograms
+
+# Normality of residual
+resid_auxpanel(model_H2_H3_?_??_corrected$residuals, 
+               model_H2_H3_?_??_corrected$fitted.values,
+               plots = c("qq", "hist", "index", "resid"),
+               smoother = TRUE, qqbands = TRUE, bins=50)
+
+
+# Normality per conditions
+par(mfrow=c(2, 2))  # 2x2 layout for the plots
+# Create filters to selected from outlier corrected data set
+Filter_g_t_?_?? = filter(data_across_regions_H2_H3_?_??_corrected, Grading == "HGG", en_variable == "baselinecorrected_tumor")
+hist(Filter_g_t_?_??$score, main="HGG Patients - Tumor", xlab = "Residual_SampEn", col="red")
+Filter_g_p_?_?? = filter(data_across_regions_H2_H3_?_??_corrected, Grading == "HGG", en_variable == "baselinecorrected_peritumor")
+hist(Filter_g_p_?_??$score, main="HGG Patients - Peritumoral", xlab = "Residual_SampEn", col="red")
+Filter_g_i_?_?? = filter(data_across_regions_H2_H3_?_??_corrected, Grading == "HGG", en_variable == "baselinecorrected_ipsilateral")
+hist(Filter_g_i_?_??$score, main="HGG Patients - Ispsilateral", xlab = "Residual_SampEn", col="red")
+Filter_g_c_?_?? = filter(data_across_regions_H2_H3_?_??_corrected, Grading == "HGG", en_variable == "baselinecorrected_contralateral")
+hist(Filter_g_c_?_??$score, main="HGG Patients - Contralateral", xlab = "Residual_SampEn", col="red")
+
+Filter_h_t_?_?? = filter(data_across_regions_H2_H3_?_??_corrected, Grading == "LGG", en_variable == "baselinecorrected_tumor")
+hist(Filter_h_t_?_??$score, main="LGG Patients - Tumor", xlab = "Residual_SampEn", col="purple")
+Filter_h_p_?_?? = filter(data_across_regions_H2_H3_?_??_corrected, Grading == "LGG", en_variable == "baselinecorrected_peritumor")
+hist(Filter_h_p_?_??$score, main="LGG Patients - Peritumoral", xlab = "Residual_SampEn", col="purple")
+Filter_h_i_?_?? = filter(data_across_regions_H2_H3_?_??_corrected, Grading == "LGG", en_variable == "baselinecorrected_ipsilateral")
+hist(Filter_h_i_?_??$score, main="LGG Patients - Ispsilateral", xlab = "Residual_SampEn", col="purple")
+Filter_g_c_?_?? = filter(data_across_regions_H2_H3_?_??_corrected, Grading == "LGG", en_variable == "baselinecorrected_contralateral")
+hist(Filter_g_c_?_??$score, main="LGG Patients - Contralateral", xlab = "Residual_SampEn", col="purple")
+
+# Reset the plotting configuration
+par(mfrow=c(1, 1))  # Reset to default single plot
+
+
+
+#-------------------#
+
+# Robustness:
+# extract e.g., n per group that is of interest for robustness
+data_across_regions_H2_H3_?_??_corrected %>%
+  group_by(en_variable, Grading) %>%
+  get_summary_stats(score, type = "mean_sd")
+```
+
+Interpretation and Argumentation:
+
+**Outliers** (n='see above') were identified and excluded in this analysis
+
+**Note about normality and variance assumptions:**\
+*To all of the assumptions mentioned above ANOVA's, just like t-tests, are "robust against the violations of the normality and equal variance assumptions if within-groups n's are reasonable large"* (Applied Statistics I, Warner, 2021, p.377; also see p.486).*\
+In greater detail about normality: "The results of these tests of normality often dependend more on sample size than on distribution shape (University College London). \[...\] Some textbooks say that a normal distribution of scores in a sample is a required assumption for the use of many common statistics. Strictly speaking that is incorrect (Field, 2018)."* (Applied Statistics I, Warner, 2021, p.148f.)*\
+*Especially the Shapiro test gets easily oversensitive with sample size exceeding n = 50 (Datanovia, ultimate guide for mixed design anova).\
+On a general note, making interpretations of the histograms and graphs is more important.
+
+In our case, it is easy to argue that there is **robustness**:\
+I argue that the test is robust against this violation because the difference in observations between the smallest and largest group does not exceed nk \> 1.5 and we have a *reasonably* large sample size. In our case, the groups have a sample size of n='mention n from robustness output' and ... respectively.
+
+Which assumptions are most **relevant**?\
+No person-by-treatment interaction (tested above) and sphericity assumption (internally adjusted in ANOVA irrespective of significance and therefore [not]{.underline} explicitly tested in this part).
+
+## Testing Hypotheses 2-3: LGG & HGG differences (1-to-1)
+
+```{r}
+# Type III sum of squares is used, whereas main effects get hardly interpretable if an interaction effect is present (sig or non-sig). 
+# Why did I not just use Type II? Inconsistencies in calculations if results were compared to SPSS
+
+# Mixed ANOVA with interaction
+res.aov_H2_H3_corrected = anova_test(
+  data = data_across_regions_H2_H3_?_??_corrected, dv = score, wid = Id,
+  between = Grading, within = en_variable, 
+  covariate = c(age_T0, sex),
+  effect.size = "pes", type=3, detailed = TRUE
+)
+
+# Mixed ANOVA for Main effects
+# not always necessary or appropriate
+res.aov_H2_H3_main_corrected = anova_test(score ~ Grading + en_variable + age_T0 + sex, data = data_across_regions_H2_H3_?_??_corrected, wid = Id,
+  effect.size = "pes", type=3
+)
+
+# Extract ANOVA table
+# GG specifies that the correction for sphericity will be done via Greenhouse-Geisser correction to all variables irrespective of their p-value on the GG test
+anova_table_H2_H3_corrected = get_anova_table(res.aov_H2_H3_corrected, correction = "GG")
+anova_table_H2_H3_corrected
+
+anova_table_H2_H3_main_corrected = get_anova_table(res.aov_H2_H3_main_corrected, correction = "GG")
+anova_table_H2_H3_main_corrected
+
+
+#-------------------------------------
+# This following part has most relevance if interaction terms or main effects are significant. If not, following test should not be reported or executed.
+# You can find post-hoc one way ANOVAs, effect size calculations and contrasts underneath
+
+
+# One way group / subjects variable | Effect of subject on each time point
+data_across_regions_H2_H3_?_??_corrected %>%
+  group_by(en_variable) %>%
+  anova_test(dv = score, wid = Id, between = Grading) %>%
+  get_anova_table() %>%
+  adjust_pvalue(method = "bonferroni")
+
+# The evaluation of the effect size is obtained with bootstrapping
+#data_across_regions_H2_H3_?_?? %>%
+#  group_by(en_variable) %>%
+#  cohens_d(score ~ Grading, paired = TRUE, 
+#        var.equal = FALSE, ci = TRUE, conf.level = 0.95)
+
+
+# One way location variable | Effect of Location upon subject
+data_across_regions_H2_H3_?_??_corrected %>%
+  group_by(Grading) %>%
+  anova_test(dv = score, wid = Nr, between = en_variable) %>%
+  get_anova_table() %>%
+  adjust_pvalue(method = "bonferroni")
+
+# Pairwise comparisons between group levels
+Paired_t_testsH23 = data_across_regions_H2_H3_?_??_corrected %>%
+   group_by(Grading) %>%
+   t_test(score ~ en_variable, p.adjust.method = "bonferroni", detailed = TRUE, paired = TRUE) # Must be true if it is a dependent test
+print(Paired_t_testsH23, width = Inf) 
+
+# The evaluation of the effect size is obtained with bootstrapping
+#data_across_regions_H2_H3_?_??_corrected %>%
+#  group_by(Grading) %>%
+#  cohens_d(score ~ en_variable, paired = TRUE, 
+#        var.equal = FALSE, ci = TRUE, conf.level = 0.95)
+
+```
+
+Here you first should report the output of the interaction terms in the ANOVA.\
+Afterwards, main effect are being conducted and supplement by e.g. simple effects.
+
+## Visualize Hypotheses 2-3
+
+```{r}
+# Create the ggline plot for all conditions
+ggline(data_across_regions_H2_H3_?_??_corrected, 
+       x = "en_variable", 
+       y = "score", 
+       color = "Grading",
+       add = "mean_ci", type = "dotplot") +
+  labs(x = "Regions",           
+       y = "Residual_SampEn",             
+       color = "Subjects") +     # Legend title
+  scale_x_discrete(labels = c("baselinecorrected_tumor" = "Tumor",        # Custom labels for each level
+                              "baselinecorrected_peritumor" = "Peri-tumor",
+                              "baselinecorrected_ipsilateral" = "Ipsilateral",
+                              "baselinecorrected_contralateral" = "Contralateral")) +
+  labs(subtitle = "Entropy parameters:  m=?, r=.?? (Hypothesis 1-3) | Outlier excluded | Baseline corrected") +
+  theme(plot.subtitle = element_text(size = 7))+
+  scale_color_manual(values = c("red", "purple"))
+
+# Create boxplot with color for all conditions
+ggplot(data_across_regions_H2_H3_?_??_corrected, aes(x = en_variable, 
+                                                    y = score, 
+                                                    color = Grading)) +
+  geom_boxplot() +
+  labs(x = "Regions",          
+       y = "Residual_SampEn",          
+       color = "Subjects") +    # Legend title
+  theme_minimal() +
+  scale_x_discrete(labels = c("baselinecorrected_tumor" = "Tumor",            # Custom labels for each level
+                              "baselinecorrected_peritumor" = "Peri-tumor",
+                              "baselinecorrected_ipsilateral" = "Ipsilateral",
+                              "baselinecorrected_contralateral" = "Contralateral")) +
+  labs(subtitle = "Entropy parameters:  m=?, r=.?? (Hypothesis 1-3) | Outlier excluded | Baseline corrected") +
+  theme(plot.subtitle = element_text(size = 7)) +
+  scale_color_manual(values = c("red", "purple"))
+
+
+```
+
+These plots (especially ggline) should be in line with simple effects results. Double check the conclusions. The graphs created can be best compared across different parameter choices.
+
+## Visualizations across Hypotheses
+
+### \[Conceputally / Practically including the baseline is not suited, wherefore this would not included the adjusted analysis for H2/H3\]
+
+```{r}
+# Create boxplot with color for all conditions
+ggplot(data_across_regions_?_??_corrected, aes(x = en_variable, 
+                                            y = score, 
+                                            color = Grading)) +
+  geom_boxplot() +
+  labs(x = "en_variable", 
+       y = "Score", 
+       color = "Grading") +
+  theme_minimal() +
+  labs(x = "Regions",            
+       y = "Residual_SampEn",             
+       color = "Subjects") +     # Legend title
+  scale_x_discrete(labels = c("en_tumor_?_??" = "Tumor",        # Custom labels for each level
+                              "en_peri_?_??" = "Peri-tumor",
+                              "en_ipsi_?_??" = "Ipsilateral",
+                              "en_contra_?_??" = "Contralateral")) +
+  labs(subtitle = "Entropy parameters:  m=?, r=.?? (Hypothesis 1-3) | Outlier excluded") +
+  theme(plot.subtitle = element_text(size = 7))+
+  scale_color_manual(values = c("green", "red", "purple")) 
+
+
+    
+# Create the ggline plot for all conditions
+ggline(data_across_regions_?_??_corrected, 
+                          x = "en_variable", 
+                          y = "score", 
+                          color = "Grading",
+                          add = "mean_ci", "dotplot") + # 95%
+  labs(x = "Regions",            
+       y = "Residual_SampEn",             
+       color = "Subjects",
+      ) +     # Legend title
+  scale_x_discrete(labels = c("en_tumor_?_??" = "Tumor",        # Custom labels for each level
+                              "en_peri_?_??" = "Peri-tumor",
+                              "en_ipsi_?_??" = "Ipsilateral",
+                              "en_contra_?_??" = "Contralateral")) +
+  labs(subtitle = "Entropy parameters:  m=?, r=.?? (Hypothesis 1-3) | Outlier excluded") +
+  theme(plot.subtitle = element_text(size = 7)) +
+  scale_color_manual(values = c("green", "red", "purple"))
+```
+
+```         
+```
